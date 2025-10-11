@@ -90,6 +90,7 @@ from zipvoice.tokenizer.tokenizer import (
     EmiliaTokenizer,
     EspeakTokenizer,
     LibriTTSTokenizer,
+    RawPhonemeTokenizer,
     SimpleTokenizer,
 )
 from zipvoice.utils.checkpoint import (
@@ -339,7 +340,7 @@ def get_parser():
         "--tokenizer",
         type=str,
         default="emilia",
-        choices=["emilia", "libritts", "espeak", "simple"],
+        choices=["emilia", "libritts", "espeak", "simple", "raw_phoneme"],
         help="Tokenizer type.",
     )
 
@@ -897,6 +898,8 @@ def run(rank, world_size, args):
         tokenizer = LibriTTSTokenizer(token_file=params.token_file)
     elif params.tokenizer == "espeak":
         tokenizer = EspeakTokenizer(token_file=params.token_file, lang=params.lang)
+    elif params.tokenizer == "raw_phoneme":
+        tokenizer = RawPhonemeTokenizer(token_file=params.token_file, lang=params.lang)
     else:
         assert params.tokenizer == "simple"
         tokenizer = SimpleTokenizer(token_file=params.token_file)

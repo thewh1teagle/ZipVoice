@@ -76,6 +76,7 @@ from zipvoice.tokenizer.tokenizer import (
     EmiliaTokenizer,
     EspeakTokenizer,
     LibriTTSTokenizer,
+    RawPhonemeTokenizer,
     SimpleTokenizer,
 )
 from zipvoice.utils.common import AttributeDict, str2bool
@@ -136,7 +137,7 @@ def get_parser():
         "--tokenizer",
         type=str,
         default="emilia",
-        choices=["emilia", "libritts", "espeak", "simple"],
+        choices=["emilia", "libritts", "espeak", "simple", "raw_phoneme"],
         help="Tokenizer type.",
     )
 
@@ -851,6 +852,8 @@ def main():
         tokenizer = LibriTTSTokenizer(token_file=token_file)
     elif params.tokenizer == "espeak":
         tokenizer = EspeakTokenizer(token_file=token_file, lang=params.lang)
+    elif params.tokenizer == "raw_phoneme":
+        tokenizer = RawPhonemeTokenizer(token_file=token_file, lang=params.lang)
     else:
         assert params.tokenizer == "simple"
         tokenizer = SimpleTokenizer(token_file=token_file)

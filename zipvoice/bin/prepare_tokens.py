@@ -38,7 +38,7 @@ def get_args():
         "--tokenizer",
         type=str,
         default="emilia",
-        choices=["emilia", "espeak", "dialog", "libritts", "simple"],
+        choices=["emilia", "espeak", "dialog", "libritts", "simple", "raw_phoneme"],
         help="The destination directory of manifest files.",
     )
 

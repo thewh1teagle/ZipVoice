@@ -193,3 +193,23 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+
+# Local files
+result.wav
+.DS_Store
+*.7z
+saspeech_manual/
+
+!data/raw/.gitkeep
+data/
+download/
+!download/.gitkeep
+exp/
+heb-*audio-*/
+*.pt
+*.csv
+model.json
+dataset-raw/
+dataset/
+dataset-raw-en/

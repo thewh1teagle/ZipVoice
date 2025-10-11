@@ -198,6 +198,74 @@ class EspeakTokenizer(Tokenizer):
         return token_ids_list
 
 
+class RawPhonemeTokenizer(Tokenizer):
+    """Raw espeak-ng compatible phoneme tokenizer."""
+
+    def __init__(self, token_file: Optional[str] = None, lang: str = "en-us"):
+        """
+        Args:
+          tokens: the file that contains information that maps tokens to ids,
+            which is a text file with '{token}\t{token_id}' per line.
+          lang: the language identifier, see
+            https://github.com/rhasspy/espeak-ng/blob/master/docs/languages.md
+        """
+        # Parse token file
+        self.has_tokens = False
+        self.lang = lang
+        if token_file is None:
+            logging.debug(
+                "Initialize Tokenizer without tokens file, \
+                will fail when map to ids."
+            )
+            return
+        self.token2id: Dict[str, int] = {}
+        with open(token_file, "r", encoding="utf-8") as f:
+            for line in f.readlines():
+                info = line.rstrip().split("\t")
+                token, id = info[0], int(info[1])
+                assert token not in self.token2id, token
+                self.token2id[token] = id
+        self.pad_id = self.token2id["_"]  # padding
+        self.vocab_size = len(self.token2id)
+        self.has_tokens = True
+
+    def g2p(self, text: str) -> List[str]:
+        """Return each character as a separate phoneme (like espeak output)."""
+        return list(text.strip())
+
+    def texts_to_token_ids(
+        self,
+        texts: List[str],
+    ) -> List[List[int]]:
+        return self.tokens_to_token_ids(self.texts_to_tokens(texts))
+
+    def texts_to_tokens(
+        self,
+        texts: List[str],
+    ) -> List[List[str]]:
+        tokens_list = [self.g2p(texts[i]) for i in range(len(texts))]
+        return tokens_list
+
+    def tokens_to_token_ids(
+        self,
+        tokens_list: List[List[str]],
+    ) -> List[List[int]]:
+        assert self.has_tokens, "Please initialize Tokenizer with a tokens file."
+
+        token_ids_list = []
+
+        for tokens in tokens_list:
+            token_ids = []
+            for t in tokens:
+                if t not in self.token2id:
+                    logging.debug(f"Skip OOV {t}")
+                    continue
+                token_ids.append(self.token2id[t])
+
+            token_ids_list.append(token_ids)
+
+        return token_ids_list
+
 class EmiliaTokenizer(Tokenizer):
     def __init__(self, token_file: Optional[str] = None, token_type="phone"):
         """
@@ -616,6 +684,8 @@ def add_tokens(cut_set: CutSet, tokenizer: str, lang: str):
         tokenizer = EmiliaTokenizer()
     elif tokenizer == "espeak":
         tokenizer = EspeakTokenizer(lang=lang)
+    elif tokenizer == "raw_phoneme":
+        tokenizer = RawPhonemeTokenizer(lang=lang)
     elif tokenizer == "dialog":
         tokenizer = DialogTokenizer()
     elif tokenizer == "libritts":

@@ -62,6 +62,7 @@ from zipvoice.tokenizer.tokenizer import (
     EmiliaTokenizer,
     EspeakTokenizer,
     LibriTTSTokenizer,
+    RawPhonemeTokenizer,
     SimpleTokenizer,
 )
 from zipvoice.utils.checkpoint import (
@@ -91,6 +92,7 @@ from zipvoice.utils.common import (
 from zipvoice.utils.hooks import register_inf_check_hooks
 from zipvoice.utils.lr_scheduler import Eden, FixedLRScheduler, LRScheduler
 from zipvoice.utils.optim import ScaledAdam
+from tqdm import tqdm
 
 LRSchedulerType = Union[torch.optim.lr_scheduler._LRScheduler, LRScheduler]
 
@@ -349,7 +351,7 @@ def get_parser():
         "--tokenizer",
         type=str,
         default="emilia",
-        choices=["emilia", "libritts", "espeak", "simple"],
+        choices=["emilia", "libritts", "espeak", "simple", "raw_phoneme"],
         help="Tokenizer type.",
     )
 
@@ -548,7 +550,11 @@ def train_one_epoch(
             rank=0,
         )
 
-    for batch_idx, batch in enumerate(train_dl):
+    pbar = tqdm(enumerate(train_dl), 
+            desc=f"Epoch {params.cur_epoch}",
+            postfix={'loss': 0, 'iter': params.batch_idx_train})
+
+    for batch_idx, batch in pbar:
 
         if batch_idx % 10 == 0:
             if params.finetune:
@@ -906,6 +912,8 @@ def run(rank, world_size, args):
         tokenizer = LibriTTSTokenizer(token_file=params.token_file)
     elif params.tokenizer == "espeak":
         tokenizer = EspeakTokenizer(token_file=params.token_file, lang=params.lang)
+    elif params.tokenizer == "raw_phoneme":
+        tokenizer = RawPhonemeTokenizer(token_file=params.token_file, lang=params.lang)
     else:
         assert params.tokenizer == "simple"
         tokenizer = SimpleTokenizer(token_file=params.token_file)
@@ -1081,20 +1089,24 @@ def run(rank, world_size, args):
             diagnostic.print_diagnostics()
             break
 
-        filename = params.exp_dir / f"epoch-{params.cur_epoch}.pt"
-        save_checkpoint(
-            filename=filename,
-            params=params,
-            model=model,
-            model_avg=model_avg,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            sampler=train_dl.sampler,
-            scaler=scaler,
-            rank=rank,
-        )
 
-        if rank == 0:
+        
+        filename = params.exp_dir / f"epoch-{params.cur_epoch}.pt"
+
+        # Do not save checkpoint for each epoch it happens too often
+        # save_checkpoint(
+        #     filename=filename,
+        #     params=params,
+        #     model=model,
+        #     model_avg=model_avg,
+        #     optimizer=optimizer,
+        #     scheduler=scheduler,
+        #     sampler=train_dl.sampler,
+        #     scaler=scaler,
+        #     rank=rank,
+        # )
+
+        if rank == 0 and filename.exists():
             if params.best_train_epoch == params.cur_epoch:
                 best_train_filename = params.exp_dir / "best-train-loss.pt"
                 copyfile(src=filename, dst=best_train_filename)

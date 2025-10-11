@@ -249,7 +249,9 @@ def load_prompt_wav(prompt_wav: str, sampling_rate: int):
         Loaded prompt waveform with target sampling rate,
         PyTorch tensor of shape (C, T)
     """
-    prompt_wav, prompt_sampling_rate = torchaudio.load(prompt_wav)
+    import soundfile as sf
+    _data, prompt_sampling_rate = sf.read(str(prompt_wav), dtype="float32", always_2d=True)
+    prompt_wav = torch.from_numpy(_data.T)  # (C, T)
 
     if prompt_sampling_rate != sampling_rate:
         resampler = torchaudio.transforms.Resample(
