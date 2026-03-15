@@ -140,3 +140,19 @@ The `resume_checkpoint` function only looks for files named `epoch-{N}.pt`. To r
 2. Set `--start-epoch 2` in the training script.
 
 This restores the optimizer, scheduler, and `batch_idx_train` (8000) and continues from iteration 8000.
+
+## Infer
+
+```console
+uv run python3 -m zipvoice.bin.infer_zipvoice \
+      --model-name zipvoice \
+      --model-dir exp/zipvoice_finetune/ \
+      --checkpoint-name checkpoint-200.pt \
+      --tokenizer raw_phoneme \
+      --prompt-wav prompt.wav \
+      --prompt-text "halˈaχti lamakˈolet liknˈot lˈeχem veχalˈav, ubadˈeʁeχ paɡˈaʃti χavˈeʁ jaʃˈan ʃelˈo ʁaʔˈiti haʁbˈe zmˈan." \
+      --text "simˈu lˈev noseʔˈim jekaʁˈim, haʁakˈevet tikanˈes letaχanˈat tˈel ʔavˈiv meʁkˈaz beʔˈod mispˈaʁ dakˈot, ʔˈana hitʁaχakˈu miktsˈe haʁatsˈif vehamtˈinu meʔaχoʁˈej hakˈav
+  hatsahˈov, todˈa." \
+      --res-wav-path result.wav \
+      --num-step 16
+```
