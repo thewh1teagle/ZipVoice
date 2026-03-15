@@ -129,6 +129,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
             --world-size 1 \
             --use-fp16 1 \
             --finetune 1 \
+            --checkpoint ${download_dir}/zipvoice/model.pt \
             --base-lr 1e-4 \
             --num-iters 9990000 \
             --save-every-n 200 \
