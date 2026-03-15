@@ -430,13 +430,14 @@ def generate_sentence_raw_evaluation(
     # Adjust wav volume if necessary
     if prompt_rms < target_rms:
         wav = wav * prompt_rms / target_rms
-    import soundfile as sf
-    _wav = wav.cpu().numpy()
-    if _wav.ndim == 2:
-        _wav = _wav.T  # (C, T) -> (T, C) for soundfile
-    elif _wav.ndim == 1:
-        pass  # already (T,)
-    sf.write(str(save_path), _wav, sampling_rate)
+    try:
+        torchaudio.save(save_path, wav.cpu(), sample_rate=sampling_rate)
+    except Exception:
+        import soundfile as sf
+        _wav = wav.cpu().numpy()
+        if _wav.ndim == 2:
+            _wav = _wav.T
+        sf.write(str(save_path), _wav, sampling_rate)
 
     return metrics
 
@@ -644,11 +645,14 @@ def generate_sentence(
         "rtf_vocoder": rtf_vocoder,
     }
 
-    import soundfile as sf
-    _wav = final_wav.cpu().numpy()
-    if _wav.ndim == 2:
-        _wav = _wav.T  # (C, T) -> (T, C) for soundfile
-    sf.write(str(save_path), _wav, sampling_rate)
+    try:
+        torchaudio.save(save_path, final_wav.cpu(), sample_rate=sampling_rate)
+    except Exception:
+        import soundfile as sf
+        _wav = final_wav.cpu().numpy()
+        if _wav.ndim == 2:
+            _wav = _wav.T
+        sf.write(str(save_path), _wav, sampling_rate)
     return metrics
 
 
