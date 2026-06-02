@@ -1,0 +1,5 @@
+--extra-index-url https://download.pytorch.org/whl/cu130
+
+torch==2.10.0+cu130
+torchaudio==2.10.0+cu130
+https://github.com/thewh1teagle/k2/releases/download/0.1.0/k2-1.24.4.dev20260128%2Bcuda13.0.torch2.10.0-cp312-cp312-linux_aarch64.whl

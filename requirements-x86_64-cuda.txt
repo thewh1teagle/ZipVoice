@@ -1,0 +1,6 @@
+--extra-index-url https://download.pytorch.org/whl/cu130
+--find-links https://k2-fsa.github.io/k2/cuda.html
+
+torch==2.11.0
+torchaudio==2.11.0
+k2==1.24.4.dev20260423+cuda13.0.torch2.11.0
