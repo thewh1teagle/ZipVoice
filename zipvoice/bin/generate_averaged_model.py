@@ -39,6 +39,7 @@ import torch
 from zipvoice.models.zipvoice import ZipVoice
 from zipvoice.models.zipvoice_dialog import ZipVoiceDialog, ZipVoiceDialogStereo
 from zipvoice.models.zipvoice_distill import ZipVoiceDistill
+from zipvoice.models.zipvoice_recfm import ZipVoiceRecFM
 from zipvoice.tokenizer.tokenizer import SimpleTokenizer
 from zipvoice.utils.checkpoint import (
     average_checkpoints_with_averaged_model,
@@ -94,6 +95,7 @@ def get_parser():
         choices=[
             "zipvoice",
             "zipvoice_distill",
+            "zipvoice_recfm",
             "zipvoice_dialog",
             "zipvoice_dialog_stereo",
         ],
@@ -117,7 +119,7 @@ def main():
     # Any tokenizer can be used here.
     # Use SimpleTokenizer for simplicity.
     tokenizer = SimpleTokenizer(token_file=params.exp_dir / "tokens.txt")
-    if params.model_name in ["zipvoice", "zipvoice_distill"]:
+    if params.model_name in ["zipvoice", "zipvoice_distill", "zipvoice_recfm"]:
         tokenizer_config = {
             "vocab_size": tokenizer.vocab_size,
             "pad_id": tokenizer.pad_id,
@@ -145,6 +147,11 @@ def main():
         )
     elif params.model_name == "zipvoice_distill":
         model = ZipVoiceDistill(
+            **model_config["model"],
+            **tokenizer_config,
+        )
+    elif params.model_name == "zipvoice_recfm":
+        model = ZipVoiceRecFM(
             **model_config["model"],
             **tokenizer_config,
         )

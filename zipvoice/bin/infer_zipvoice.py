@@ -78,6 +78,7 @@ from vocos import Vocos
 
 from zipvoice.models.zipvoice import ZipVoice
 from zipvoice.models.zipvoice_distill import ZipVoiceDistill
+from zipvoice.models.zipvoice_recfm import ZipVoiceRecFM
 from zipvoice.tokenizer.tokenizer import (
     EmiliaTokenizer,
     EspeakTokenizer,
@@ -115,7 +116,7 @@ def get_parser():
         "--model-name",
         type=str,
         default="zipvoice",
-        choices=["zipvoice", "zipvoice_distill"],
+        choices=["zipvoice", "zipvoice_distill", "zipvoice_recfm"],
         help="The model used for inference",
     )
 
@@ -749,6 +750,10 @@ def main():
             "num_step": 8,
             "guidance_scale": 3.0,
         },
+        "zipvoice_recfm": {
+            "num_step": 2,
+            "guidance_scale": 1.0,
+        },
     }
 
     model_specific_defaults = model_defaults.get(params.model_name, {})
@@ -780,6 +785,8 @@ def main():
             f"checkpoint {params.checkpoint_name}"
         )
     else:
+        if params.model_name == "zipvoice_recfm":
+            raise ValueError("--model-dir is required for zipvoice_recfm")
         logging.info(f"Using pretrained {params.model_name} model from the Huggingface")
         model_ckpt = hf_hub_download(
             HUGGINGFACE_REPO, filename=f"{MODEL_DIR[params.model_name]}/model.pt"
@@ -814,9 +821,14 @@ def main():
             **model_config["model"],
             **tokenizer_config,
         )
-    else:
-        assert params.model_name == "zipvoice_distill"
+    elif params.model_name == "zipvoice_distill":
         model = ZipVoiceDistill(
+            **model_config["model"],
+            **tokenizer_config,
+        )
+    else:
+        assert params.model_name == "zipvoice_recfm"
+        model = ZipVoiceRecFM(
             **model_config["model"],
             **tokenizer_config,
         )

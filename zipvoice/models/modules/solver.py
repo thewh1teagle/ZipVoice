@@ -80,8 +80,17 @@ class DiffusionModel(torch.nn.Module):
         else:
             assert t.dim() == 0
 
+            batch_size = x.size(0)
             x = torch.cat([x] * 2, dim=0)
             padding_mask = torch.cat([padding_mask] * 2, dim=0)
+            if "recfm_scale" in kwargs:
+                recfm_scale = kwargs["recfm_scale"]
+                if (
+                    torch.is_tensor(recfm_scale)
+                    and recfm_scale.dim() > 0
+                    and recfm_scale.size(0) == batch_size
+                ):
+                    kwargs["recfm_scale"] = torch.cat([recfm_scale] * 2, dim=0)
 
             text_condition = torch.cat(
                 [torch.zeros_like(text_condition), text_condition], dim=0

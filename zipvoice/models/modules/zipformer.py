@@ -126,6 +126,8 @@ class TTSZipformer(nn.Module):
         time_embed_dim: int = 192,
         use_guidance_scale_embed: bool = False,
         guidance_scale_embed_dim: int = 192,
+        use_recfm_scale_embed: bool = False,
+        recfm_scale_embed_dim: int = 192,
         use_conv: bool = True,
     ) -> None:
         super(TTSZipformer, self).__init__()
@@ -168,6 +170,7 @@ class TTSZipformer(nn.Module):
 
         self.use_time_embed = use_time_embed
         self.use_guidance_scale_embed = use_guidance_scale_embed
+        self.use_recfm_scale_embed = use_recfm_scale_embed
 
         self.time_embed_dim = time_embed_dim
         if self.use_time_embed:
@@ -175,6 +178,7 @@ class TTSZipformer(nn.Module):
         else:
             time_embed_dim = -1
         self.guidance_scale_embed_dim = guidance_scale_embed_dim
+        self.recfm_scale_embed_dim = recfm_scale_embed_dim
 
         self.in_proj = nn.Linear(in_dim, encoder_dim)
         self.out_proj = nn.Linear(encoder_dim, out_dim)
@@ -239,12 +243,23 @@ class TTSZipformer(nn.Module):
         else:
             self.guidance_scale_embed = None
 
+        if self.use_recfm_scale_embed:
+            self.recfm_scale_embed = ScaledLinear(
+                recfm_scale_embed_dim,
+                time_embed_dim,
+                bias=False,
+                initial_scale=0.1,
+            )
+        else:
+            self.recfm_scale_embed = None
+
     def forward(
         self,
         x: Tensor,
         t: Optional[Tensor] = None,
         padding_mask: Optional[Tensor] = None,
         guidance_scale: Optional[Tensor] = None,
+        recfm_scale: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor]:
         """
         Args:
@@ -257,6 +272,8 @@ class TTSZipformer(nn.Module):
             masked position. May be None.
           guidance_scale:
             The guidance scale in classifier-free guidance of distillation model.
+          recfm_scale:
+            The recursive trajectory scale used by RecFM models.
         Returns:
           Return the output embeddings. its shape is
             (batch_size, output_seq_len, encoder_dim)
@@ -268,6 +285,7 @@ class TTSZipformer(nn.Module):
             assert t.dim() == 1 or t.dim() == 2, t.shape
             time_emb = timestep_embedding(t, self.time_embed_dim)
             if guidance_scale is not None:
+                assert self.guidance_scale_embed is not None
                 assert (
                     guidance_scale.dim() == 1 or guidance_scale.dim() == 2
                 ), guidance_scale.shape
@@ -275,6 +293,15 @@ class TTSZipformer(nn.Module):
                     timestep_embedding(guidance_scale, self.guidance_scale_embed_dim)
                 )
                 time_emb = time_emb + guidance_scale_emb
+            if recfm_scale is not None:
+                assert self.recfm_scale_embed is not None
+                assert (
+                    recfm_scale.dim() == 1 or recfm_scale.dim() == 2
+                ), recfm_scale.shape
+                recfm_scale_emb = self.recfm_scale_embed(
+                    timestep_embedding(recfm_scale, self.recfm_scale_embed_dim)
+                )
+                time_emb = time_emb + recfm_scale_emb
             time_emb = self.time_embed(time_emb)
         else:
             time_emb = None

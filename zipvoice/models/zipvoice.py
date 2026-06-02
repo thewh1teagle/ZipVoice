@@ -140,6 +140,7 @@ class ZipVoice(nn.Module):
         speech_condition: torch.Tensor,
         padding_mask: Optional[torch.Tensor] = None,
         guidance_scale: Optional[torch.Tensor] = None,
+        recfm_scale: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Compute velocity.
         Args:
@@ -154,6 +155,8 @@ class ZipVoice(nn.Module):
             padding_mask: The mask for padding, True means masked
                 position, with the shape (N, T).
             guidance_scale: The guidance scale in classifier-free guidance,
+                which is a tensor of shape (N, 1, 1) or a tensor of a float.
+            recfm_scale: The recursive trajectory scale for RecFM models,
                 which is a tensor of shape (N, 1, 1) or a tensor of a float.
 
         Returns:
@@ -177,8 +180,23 @@ class ZipVoice(nn.Module):
             if guidance_scale.dim() == 0:
                 guidance_scale = guidance_scale.repeat(xt.shape[0])
 
+        if recfm_scale is not None:
+            if not torch.is_tensor(recfm_scale):
+                recfm_scale = torch.tensor(
+                    recfm_scale, dtype=t.dtype, device=t.device
+                )
+            while recfm_scale.dim() > 1 and recfm_scale.size(-1) == 1:
+                recfm_scale = recfm_scale.squeeze(-1)
+            if recfm_scale.dim() == 0:
+                recfm_scale = recfm_scale.repeat(xt.shape[0])
+
+        if guidance_scale is not None or recfm_scale is not None:
             vt = self.fm_decoder(
-                x=xt, t=t, padding_mask=padding_mask, guidance_scale=guidance_scale
+                x=xt,
+                t=t,
+                padding_mask=padding_mask,
+                guidance_scale=guidance_scale,
+                recfm_scale=recfm_scale,
             )
         else:
             vt = self.fm_decoder(x=xt, t=t, padding_mask=padding_mask)
@@ -397,6 +415,7 @@ class ZipVoice(nn.Module):
         duration: str = "predict",
         num_step: int = 5,
         guidance_scale: float = 0.5,
+        recfm_scale: Optional[float] = None,
     ) -> torch.Tensor:
         """
         Generate acoustic features, given text tokens, prompts feature
@@ -414,6 +433,7 @@ class ZipVoice(nn.Module):
                 feature length is given by features_lens.
             num_step: the number of steps to use in the ODE solver.
             guidance_scale: the guidance scale for classifier-free guidance.
+            recfm_scale: The recursive trajectory scale for RecFM models.
         """
 
         assert duration in ["real", "predict"]
@@ -465,6 +485,7 @@ class ZipVoice(nn.Module):
             num_step=num_step,
             guidance_scale=guidance_scale,
             t_shift=t_shift,
+            recfm_scale=recfm_scale,
         )
         x1_wo_prompt_lens = (~padding_mask).sum(-1) - prompt_features_lens
         x1_prompt = torch.zeros(
@@ -496,6 +517,7 @@ class ZipVoice(nn.Module):
         t_end: float,
         num_step: int = 1,
         guidance_scale: torch.Tensor = None,
+        recfm_scale: torch.Tensor = None,
     ) -> torch.Tensor:
         """
         Generate acoustic features in intermediate timesteps.
@@ -511,6 +533,8 @@ class ZipVoice(nn.Module):
             t_end: The end timestep.
             num_step: The number of steps for sampling.
             guidance_scale: The scale for classifier-free guidance inference,
+                with the shape (batch, 1, 1).
+            recfm_scale: The recursive trajectory scale for RecFM models,
                 with the shape (batch, 1, 1).
         """
         (text_condition, padding_mask,) = self.forward_text_train(
@@ -529,6 +553,7 @@ class ZipVoice(nn.Module):
             guidance_scale=guidance_scale,
             t_start=t_start,
             t_end=t_end,
+            recfm_scale=recfm_scale,
         )
         x_t_end_lens = (~padding_mask).sum(-1)
         return x_t_end, x_t_end_lens
