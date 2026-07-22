@@ -127,8 +127,10 @@ class TTSZipformer(nn.Module):
         use_guidance_scale_embed: bool = False,
         guidance_scale_embed_dim: int = 192,
         use_conv: bool = True,
+        causal: bool = False,
     ) -> None:
         super(TTSZipformer, self).__init__()
+        self.causal = causal
 
         if dropout is None:
             dropout = ScheduledFloat((0.0, 0.3), (20000.0, 0.1))
@@ -195,6 +197,7 @@ class TTSZipformer(nn.Module):
                 use_conv=use_conv,
                 cnn_module_kernel=cnn_module_kernel[i],
                 dropout=dropout,
+                causal=causal,
             )
 
             # For the segment of the warmup period, we let the Conv2dSubsampling
@@ -245,6 +248,7 @@ class TTSZipformer(nn.Module):
         t: Optional[Tensor] = None,
         padding_mask: Optional[Tensor] = None,
         guidance_scale: Optional[Tensor] = None,
+        attn_mask: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor]:
         """
         Args:
@@ -257,6 +261,9 @@ class TTSZipformer(nn.Module):
             masked position. May be None.
           guidance_scale:
             The guidance scale in classifier-free guidance of distillation model.
+          attn_mask:
+            The attention mask of shape (seq_len, seq_len); True means masked
+            position (e.g. a block-causal mask for streaming). May be None.
         Returns:
           Return the output embeddings. its shape is
             (batch_size, output_seq_len, encoder_dim)
@@ -278,8 +285,6 @@ class TTSZipformer(nn.Module):
             time_emb = self.time_embed(time_emb)
         else:
             time_emb = None
-
-        attn_mask = None
 
         for i, module in enumerate(self.encoders):
             x = module(
@@ -325,6 +330,7 @@ class Zipformer2EncoderLayer(nn.Module):
         dropout: FloatLike = 0.1,
         cnn_module_kernel: int = 31,
         use_conv: bool = True,
+        causal: bool = False,
         attention_skip_rate: FloatLike = ScheduledFloat(
             (0.0, 0.2), (4000.0, 0.05), (16000, 0.0), default=0
         ),
@@ -397,9 +403,13 @@ class Zipformer2EncoderLayer(nn.Module):
         self.use_conv = use_conv
 
         if self.use_conv:
-            self.conv_module1 = ConvolutionModule(embed_dim, cnn_module_kernel)
+            self.conv_module1 = ConvolutionModule(
+                embed_dim, cnn_module_kernel, causal=causal
+            )
 
-            self.conv_module2 = ConvolutionModule(embed_dim, cnn_module_kernel)
+            self.conv_module2 = ConvolutionModule(
+                embed_dim, cnn_module_kernel, causal=causal
+            )
 
         self.norm = BiasNorm(embed_dim)
 
@@ -1558,11 +1568,14 @@ class ConvolutionModule(nn.Module):
         self,
         channels: int,
         kernel_size: int,
+        causal: bool = False,
     ) -> None:
         """Construct a ConvolutionModule object."""
         super(ConvolutionModule, self).__init__()
         # kernerl_size should be a odd number for 'SAME' padding
         assert (kernel_size - 1) % 2 == 0
+        self.causal = causal
+        self.kernel_size = kernel_size
 
         bottleneck_dim = channels
 
@@ -1608,7 +1621,7 @@ class ConvolutionModule(nn.Module):
             out_channels=bottleneck_dim,
             groups=bottleneck_dim,
             kernel_size=kernel_size,
-            padding=kernel_size // 2,
+            padding=0 if causal else kernel_size // 2,
         )
 
         self.balancer2 = Balancer(
@@ -1669,6 +1682,9 @@ class ConvolutionModule(nn.Module):
         if src_key_padding_mask is not None:
             x = x.masked_fill(src_key_padding_mask.unsqueeze(1).expand_as(x), 0.0)
 
+        if self.causal:
+            # left-pad so each output frame only depends on current and past frames
+            x = torch.nn.functional.pad(x, (self.kernel_size - 1, 0))
         x = self.depthwise_conv(x)
 
         x = self.balancer2(x)

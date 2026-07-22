@@ -25,6 +25,7 @@ from zipvoice.models.modules.solver import EulerSolver
 from zipvoice.models.modules.zipformer import TTSZipformer
 from zipvoice.utils.common import (
     condition_time_mask,
+    condition_time_mask_suffix,
     get_tokens_index,
     make_pad_mask,
     pad_labels,
@@ -57,6 +58,9 @@ class ZipVoice(nn.Module):
         feat_dim: int = 100,
         vocab_size: int = 26,
         pad_id: int = 0,
+        fm_decoder_causal: bool = False,
+        causal_block_frames: int = 32,
+        causal_block_frames_choices: Optional[List[int]] = None,
     ):
         """
         Initialize the model with specified configuration parameters.
@@ -107,6 +111,7 @@ class ZipVoice(nn.Module):
             pos_dim=pos_dim,
             use_time_embed=True,
             time_embed_dim=time_embed_dim,
+            causal=fm_decoder_causal,
         )
 
         self.text_encoder = TTSZipformer(
@@ -129,8 +134,33 @@ class ZipVoice(nn.Module):
         self.text_embed_dim = text_embed_dim
         self.pad_id = pad_id
 
+        self.fm_decoder_causal = fm_decoder_causal
+        self.causal_block_frames = causal_block_frames
+        # block sizes sampled during causal training; multiples of 4 so block
+        # boundaries survive the [::ds] downsampling of the attention mask
+        self.causal_block_frames_choices = causal_block_frames_choices or [
+            16, 24, 32, 40, 48,
+        ]
+
         self.embed = nn.Embedding(vocab_size, text_embed_dim)
         self.solver = EulerSolver(self, func_name="forward_fm_decoder")
+
+    def block_causal_mask(self, seq_len: int, device: torch.device) -> torch.Tensor:
+        """Build a block-causal attention mask of shape (seq_len, seq_len).
+
+        Position i may attend to position j iff j's block index is <= i's,
+        i.e. everything up to the end of i's own block. True means masked.
+        During training the block size is sampled randomly per batch; at
+        inference the fixed `causal_block_frames` is used.
+        """
+        if self.training:
+            block = self.causal_block_frames_choices[
+                int(torch.randint(len(self.causal_block_frames_choices), (1,)))
+            ]
+        else:
+            block = self.causal_block_frames
+        blk = torch.arange(seq_len, device=device) // block
+        return blk[None, :] > blk[:, None]
 
     def forward_fm_decoder(
         self,
@@ -140,6 +170,7 @@ class ZipVoice(nn.Module):
         speech_condition: torch.Tensor,
         padding_mask: Optional[torch.Tensor] = None,
         guidance_scale: Optional[torch.Tensor] = None,
+        attn_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Compute velocity.
         Args:
@@ -178,10 +209,16 @@ class ZipVoice(nn.Module):
                 guidance_scale = guidance_scale.repeat(xt.shape[0])
 
             vt = self.fm_decoder(
-                x=xt, t=t, padding_mask=padding_mask, guidance_scale=guidance_scale
+                x=xt,
+                t=t,
+                padding_mask=padding_mask,
+                guidance_scale=guidance_scale,
+                attn_mask=attn_mask,
             )
         else:
-            vt = self.fm_decoder(x=xt, t=t, padding_mask=padding_mask)
+            vt = self.fm_decoder(
+                x=xt, t=t, padding_mask=padding_mask, attn_mask=attn_mask
+            )
         return vt
 
     def forward_text_embed(
@@ -355,11 +392,20 @@ class ZipVoice(nn.Module):
             features_lens=features_lens,
         )
 
-        speech_condition_mask = condition_time_mask(
-            features_lens=features_lens,
-            mask_percent=(0.7, 1.0),
-            max_len=features.size(1),
-        )
+        if self.fm_decoder_causal:
+            # streaming: condition must be a prefix (the prompt), generated
+            # region a suffix, matching block-wise causal inference
+            speech_condition_mask = condition_time_mask_suffix(
+                features_lens=features_lens,
+                mask_percent=(0.7, 1.0),
+                max_len=features.size(1),
+            )
+        else:
+            speech_condition_mask = condition_time_mask(
+                features_lens=features_lens,
+                mask_percent=(0.7, 1.0),
+                max_len=features.size(1),
+            )
         speech_condition = torch.where(speech_condition_mask.unsqueeze(-1), 0, features)
 
         if condition_drop_ratio > 0.0:
@@ -372,12 +418,19 @@ class ZipVoice(nn.Module):
         xt = features * t + noise * (1 - t)
         ut = features - noise  # (B, T, F)
 
+        attn_mask = (
+            self.block_causal_mask(features.size(1), features.device)
+            if self.fm_decoder_causal
+            else None
+        )
+
         vt = self.forward_fm_decoder(
             t=t,
             xt=xt,
             text_condition=text_condition,
             speech_condition=speech_condition,
             padding_mask=padding_mask,
+            attn_mask=attn_mask,
         )
 
         loss_mask = speech_condition_mask & (~padding_mask)
@@ -465,6 +518,11 @@ class ZipVoice(nn.Module):
             num_step=num_step,
             guidance_scale=guidance_scale,
             t_shift=t_shift,
+            attn_mask=(
+                self.block_causal_mask(num_frames, text_condition.device)
+                if self.fm_decoder_causal
+                else None
+            ),
         )
         x1_wo_prompt_lens = (~padding_mask).sum(-1) - prompt_features_lens
         x1_prompt = torch.zeros(
@@ -529,6 +587,11 @@ class ZipVoice(nn.Module):
             guidance_scale=guidance_scale,
             t_start=t_start,
             t_end=t_end,
+            attn_mask=(
+                self.block_causal_mask(features.size(1), features.device)
+                if self.fm_decoder_causal
+                else None
+            ),
         )
         x_t_end_lens = (~padding_mask).sum(-1)
         return x_t_end, x_t_end_lens

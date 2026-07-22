@@ -65,6 +65,7 @@ class ZipVoiceDistill(ZipVoice):
             use_time_embed=True,
             time_embed_dim=kwargs["time_embed_dim"],
             use_guidance_scale_embed=True,
+            causal=kwargs.get("fm_decoder_causal", False),
         )
         self.solver = DistillEulerSolver(self, func_name="forward_fm_decoder")
 
